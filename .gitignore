@@ -1,0 +1,24 @@
+# Git ignore for series/movie downloader project
+# Keep code + rules only; never commit downloaded media or cache.
+
+# Downloaded videos / media
+downloads/
+*.mp4
+*.mkv
+*.ts
+*.m3u8
+
+# Cached links / tokens
+links*.json
+*.html
+
+# Debug / scratch scripts
+debug_*.js
+test_*.js
+debug_*.html
+
+# Node / OS
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
