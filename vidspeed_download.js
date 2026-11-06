@@ -12,7 +12,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const jar = path.join(os.tmpdir(), 'vidspeed_cookies.txt');
 function sleep(ms){ const s=Date.now(); while(Date.now()-s<ms){} }
 function curlText(url, extra=[]) {
-  return execFileSync('curl.exe',['-s','-L','-g','-A',UA,'-b',jar,'-c',jar,...extra,url],{encoding:'utf8',maxBuffer:10*1024*1024});
+  return execFileSync('curl.exe',['-f','-s','-S','-L','-g','-A',UA,'-b',jar,'-c',jar,...extra,url],{encoding:'utf8',maxBuffer:10*1024*1024});
 }
 
 let base = dUrl.replace(/\.html$/,'');
@@ -29,7 +29,7 @@ function getHash() {
 
 function postOnce(hash) {
   const data = `op=download_orig&id=${code}&mode=${mode}&hash=${encodeURIComponent(hash)}`;
-  const html = execFileSync('curl.exe',['-s','-L','-g','-X','POST','-A',UA,'-b',jar,'-c',jar,'-e',base,'-H','Content-Type: application/x-www-form-urlencoded','-d',data,base],{encoding:'utf8',maxBuffer:10*1024*1024});
+  const html = execFileSync('curl.exe',['-f','-s','-S','-L','-g','-X','POST','-A',UA,'-b',jar,'-c',jar,'-e',base,'-H','Content-Type: application/x-www-form-urlencoded','-d',data,base],{encoding:'utf8',maxBuffer:10*1024*1024});
   if (html.includes('Security error')) return null;
   const mm = html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/);
   return mm ? mm[1].replace(/\s+/g,'') : null;
@@ -37,17 +37,21 @@ function postOnce(hash) {
 
 function getDirectLink() {
   let wait = 5000;
+  let lastError;
   for (let attempt = 0; attempt < 12; attempt++) {
     try {
       const hash = getHash();
       const link = postOnce(hash);
       if (link) return link;
-    } catch (e) { /* fall through to wait */ }
+    } catch (e) {
+      lastError = e;
+      console.error(`link request failed: ${e.message}`);
+    }
     console.log(`security error / rate limit, waiting ${wait/1000}s (attempt ${attempt+1})`);
     sleep(wait);
     wait = Math.min(wait + 5000, 60000);
   }
-  throw new Error('could not acquire direct link');
+  throw new Error(`could not acquire direct link after 12 attempts${lastError ? `: ${lastError.message}` : ''}`);
 }
 
 const link = getDirectLink();
@@ -71,7 +75,7 @@ if (expected && existing === expected) {
 if (existing > 0) console.log(`resuming from ${(existing/1048576).toFixed(1)} MB`);
 
 execFileSync('curl.exe',
-  ['-L','-g','-C','-','--retry','8','--retry-delay','5','--retry-all-errors','-A',UA,'-o',outFile,link],
+  ['-f','-S','-L','-g','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',outFile,link],
   {stdio:'inherit'});
 
 const size = fs.statSync(outFile).size;

@@ -6,10 +6,10 @@ const startUrl = process.argv[2];
 if (!startUrl) { console.error('Usage: node laroza_downloader.js "<laroza play url>"'); process.exit(1); }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const BASE = 'C:\\Users\\Islam\\Desktop\\New folder';
+const BASE = process.env.SERIES_DOWNLOADER_HOME || 'C:\\Users\\Islam\\Desktop\\New folder';
 
 function sleep(ms){ const s=Date.now(); while(Date.now()-s<ms){} }
-function curlText(url){ return execFileSync('curl.exe',['-s','-L','-g','-A',UA,url],{encoding:'utf8',maxBuffer:10*1024*1024}); }
+function curlText(url){ return execFileSync('curl.exe',['-f','-s','-S','-L','-g','-A',UA,url],{encoding:'utf8',maxBuffer:10*1024*1024}); }
 
 const pageHtml = curlText(startUrl);
 
@@ -46,6 +46,7 @@ function epNum(label) {
   return mm ? parseInt(mm[1]) : 9999;
 }
 episodes.sort((a,b) => epNum(a.label) - epNum(b.label));
+const episodeNumbers = new Map(episodes.map((ep, index) => [ep.vid, epNum(ep.label) === 9999 ? index + 1 : epNum(ep.label)]));
 
 function acquireLink(ep) {
   console.log(`[${ep.label}] fetching download page`);
@@ -65,15 +66,18 @@ for (const ep of episodes) {
 console.log(`\nAcquired ${links.length}/${episodes.length} links`);
 
 async function downloadOne(l, idx) {
-  const num = idx + 1;
+  const num = episodeNumbers.get(l.vid) || idx + 1;
   const numStr = String(num).padStart(2,'0');
-  const dest = path.join(outDir, `${safeSeries} - S01E${numStr}.mkv`);
+  const dest = path.join(outDir, `${safeSeries} - S01E${numStr}.mp4`);
   if (fs.existsSync(dest) && fs.statSync(dest).size > 1000000) {
     console.log(`[E${numStr}] already downloaded, skip`);
     return dest;
   }
+  const partial = `${dest}.part`;
   console.log(`[E${numStr}] downloading`);
-  execFileSync('curl.exe', ['-s','-L','-g','-A',UA,'-o',dest,l.link], {stdio:'inherit'});
+  execFileSync('curl.exe', ['-f','-s','-S','-L','-g','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link], {stdio:'inherit'});
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  fs.renameSync(partial, dest);
   const size = fs.statSync(dest).size;
   console.log(`[E${numStr}] DONE (${(size/1048576).toFixed(1)} MB)`);
   return dest;

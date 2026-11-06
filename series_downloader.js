@@ -6,15 +6,15 @@ const startUrl = process.argv[2];
 if (!startUrl) { console.error('Usage: node series_downloader.js "<cimalight watch url>"'); process.exit(1); }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const BASE = 'C:\\Users\\Islam\\Desktop\\New folder';
+const BASE = process.env.SERIES_DOWNLOADER_HOME || 'C:\\Users\\Islam\\Desktop\\New folder';
 
 function sleep(ms){ const s=Date.now(); while(Date.now()-s<ms){} }
 
 function curlText(url, extraArgs=[]) {
-  return execFileSync('curl.exe', ['-s','-L','-A',UA,...extraArgs,url], {encoding:'utf8',maxBuffer:10*1024*1024});
+  return execFileSync('curl.exe', ['-f','-s','-S','-L','-A',UA,...extraArgs,url], {encoding:'utf8',maxBuffer:10*1024*1024});
 }
 function curlPost(url, data, referer) {
-  return execFileSync('curl.exe', ['-s','-L','-X','POST','-A',UA,'-e',referer,'-H','Content-Type: application/x-www-form-urlencoded','-d',data,url], {encoding:'utf8',maxBuffer:10*1024*1024});
+  return execFileSync('curl.exe', ['-f','-s','-S','-L','-X','POST','-A',UA,'-e',referer,'-H','Content-Type: application/x-www-form-urlencoded','-d',data,url], {encoding:'utf8',maxBuffer:10*1024*1024});
 }
 
 async function main() {
@@ -48,6 +48,7 @@ async function main() {
     return mm ? parseInt(mm[1]) : 9999;
   }
   episodes.sort((a,b) => epNum(a.label) - epNum(b.label));
+  const episodeNumbers = new Map(episodes.map((ep, index) => [ep.vid, epNum(ep.label) === 9999 ? index + 1 : epNum(ep.label)]));
   console.log(`Series: ${seriesTitle}  |  Episodes: ${episodes.length}`);
 
   const outDir = path.join(BASE, 'downloads', safeSeries);
@@ -97,8 +98,16 @@ async function main() {
 
   let links = [];
   if (fs.existsSync(linksFile)) {
-    try { links = JSON.parse(fs.readFileSync(linksFile,'utf8')); } catch(e){ links=[]; }
+    try {
+      const cached = JSON.parse(fs.readFileSync(linksFile,'utf8'));
+      if (Array.isArray(cached)) links = cached;
+      else console.error('Ignoring invalid link cache: expected a JSON array.');
+    } catch(e) {
+      console.error(`Ignoring unreadable link cache: ${e.message}`);
+    }
   }
+  const episodeIds = new Set(episodes.map(ep => ep.vid));
+  links = links.filter(link => link && episodeIds.has(link.vid) && typeof link.link === 'string');
   const have = new Set(links.map(l=>l.vid));
 
   for (const ep of episodes) {
@@ -115,15 +124,18 @@ async function main() {
   console.log(`\nAcquired ${links.length}/${episodes.length} links`);
 
   async function downloadOne(l, idx) {
-    const num = idx + 1;
+    const num = episodeNumbers.get(l.vid) || idx + 1;
     const numStr = String(num).padStart(2,'0');
     const dest = path.join(outDir, `${safeSeries} - S01E${numStr}.mp4`);
     if (fs.existsSync(dest) && fs.statSync(dest).size > 1000000) {
       console.log(`[E${numStr}] already downloaded, skip`);
       return dest;
     }
+    const partial = `${dest}.part`;
     console.log(`[E${numStr}] downloading`);
-    execFileSync('curl.exe', ['-s','-L','-A',UA,'-o',dest,l.link], {stdio:'inherit'});
+    execFileSync('curl.exe', ['-f','-s','-S','-L','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link], {stdio:'inherit'});
+    if (fs.existsSync(dest)) fs.unlinkSync(dest);
+    fs.renameSync(partial, dest);
     const size = fs.statSync(dest).size;
     console.log(`[E${numStr}] DONE (${(size/1048576).toFixed(1)} MB)`);
     return dest;
