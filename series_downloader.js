@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const startUrl = process.argv[2];
 if (!startUrl) { console.error('Usage: node series_downloader.js "<cimalight watch url>"'); process.exit(1); }
@@ -15,6 +15,16 @@ function curlText(url, extraArgs=[]) {
 }
 function curlPost(url, data, referer) {
   return execFileSync('curl.exe', ['-f','-s','-S','-L','-X','POST','-A',UA,'-e',referer,'-H','Content-Type: application/x-www-form-urlencoded','-d',data,url], {encoding:'utf8',maxBuffer:10*1024*1024});
+}
+function runCurl(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl.exe', args, {stdio:'inherit'});
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`curl exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
+    });
+  });
 }
 
 async function main() {
@@ -133,7 +143,7 @@ async function main() {
     }
     const partial = `${dest}.part`;
     console.log(`[E${numStr}] downloading`);
-    execFileSync('curl.exe', ['-f','-s','-S','-L','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link], {stdio:'inherit'});
+    await runCurl(['-f','-s','-S','-L','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link]);
     if (fs.existsSync(dest)) fs.unlinkSync(dest);
     fs.renameSync(partial, dest);
     const size = fs.statSync(dest).size;

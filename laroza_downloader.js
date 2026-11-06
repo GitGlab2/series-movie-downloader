@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const startUrl = process.argv[2];
 if (!startUrl) { console.error('Usage: node laroza_downloader.js "<laroza play url>"'); process.exit(1); }
@@ -10,6 +10,16 @@ const BASE = process.env.SERIES_DOWNLOADER_HOME || 'C:\\Users\\Islam\\Desktop\\N
 
 function sleep(ms){ const s=Date.now(); while(Date.now()-s<ms){} }
 function curlText(url){ return execFileSync('curl.exe',['-f','-s','-S','-L','-g','-A',UA,url],{encoding:'utf8',maxBuffer:10*1024*1024}); }
+function runCurl(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('curl.exe', args, {stdio:'inherit'});
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`curl exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
+    });
+  });
+}
 
 const pageHtml = curlText(startUrl);
 
@@ -75,7 +85,7 @@ async function downloadOne(l, idx) {
   }
   const partial = `${dest}.part`;
   console.log(`[E${numStr}] downloading`);
-  execFileSync('curl.exe', ['-f','-s','-S','-L','-g','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link], {stdio:'inherit'});
+  await runCurl(['-f','-s','-S','-L','-g','-C','-','--retry','8','--retry-delay','5','-A',UA,'-o',partial,l.link]);
   if (fs.existsSync(dest)) fs.unlinkSync(dest);
   fs.renameSync(partial, dest);
   const size = fs.statSync(dest).size;
